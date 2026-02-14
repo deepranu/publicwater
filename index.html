@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+<meta charset="UTF-8">
+<title>Smart Public Water Guardian</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{margin:0;font-family:Arial;background:#f1f5f9}
+header{background:#0f172a;color:white;padding:16px;font-size:22px}
+.container{padding:20px}
+input{padding:10px;width:260px;border-radius:8px;border:1px solid #ccc}
+button{background:#2563eb;color:white;border:none;padding:10px 16px;border-radius:8px;cursor:pointer}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:20px}
+.card{background:white;padding:16px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,.1)}
+.value{font-size:26px;font-weight:bold;margin-top:8px}
+.normal{color:green}
+.alert{color:red}
+.control,.log,.chart{background:white;padding:16px;border-radius:12px;margin-top:24px;box-shadow:0 4px 10px rgba(0,0,0,.1)}
+canvas{width:100%}
+footer{text-align:center;margin:30px 0;color:#64748b}
+.hidden{display:none}
+.error{color:red;margin-top:10px}
+</style>
+</head>
+
+<body>
+
+<header>💧 Smart Public Water Guardian</header>
+
+<!-- CONNECT SCREEN -->
+<div class="container" id="connectScreen">
+  <h2>🔗 Connect ESP32</h2>
+  <p>ESP32 IP Address प्रविष्ट करा:</p>
+  <input id="ipInput" placeholder="10.13.36.115">
+  <br><br>
+  <button onclick="connectESP()">Connect</button>
+  <div class="error" id="errorMsg"></div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="container hidden" id="dashboard">
+
+<div class="cards">
+<div class="card">pH Level<div class="value" id="ph">--</div></div>
+<div class="card">Turbidity (NTU)<div class="value" id="turbidity">--</div></div>
+<div class="card">Water Flow (L/min)<div class="value" id="flow">--</div></div>
+<div class="card">Status<div class="value normal" id="status">--</div></div>
+</div>
+
+<div class="control">
+<h3>🚨 Emergency Water Control</h3>
+<button style="background:#dc2626" onclick="shutWater()">Shut Water Supply</button>
+</div>
+
+<div class="chart">
+<h3>📊 Live Water Flow</h3>
+<canvas id="flowChart" width="300" height="150"></canvas>
+</div>
+
+<div class="log">
+<h3>⚠️ Alert Log</h3>
+<ul id="alerts"></ul>
+</div>
+</div>
+
+<footer>© 2026 Smart Public Water Guardian</footer>
+
+<script>
+let ESP32_IP = "";
+let lastStatus = "";
+let values = [];
+
+const phEl = document.getElementById("ph");
+const turbidityEl = document.getElementById("turbidity");
+const flowEl = document.getElementById("flow");
+const statusEl = document.getElementById("status");
+const alertsEl = document.getElementById("alerts");
+const ctx = document.getElementById("flowChart").getContext("2d");
+
+/* 🔗 CONNECT */
+async function connectESP(){
+  let ip = document.getElementById("ipInput").value.trim();
+  document.getElementById("errorMsg").innerText = "";
+
+  if(ip === ""){
+    document.getElementById("errorMsg").innerText = "IP address आवश्यक आहे";
+    return;
+  }
+
+  ip = ip.replace("http://","")
+         .replace("https://","")
+         .replace("/data","");
+
+  try{
+    let res = await fetch(`http://${ip}/data`);
+    if(!res.ok) throw "fail";
+
+    ESP32_IP = `http://${ip}`;
+    document.getElementById("connectScreen").classList.add("hidden");
+    document.getElementById("dashboard").classList.remove("hidden");
+
+    fetchData();
+    setInterval(fetchData, 4000);
+
+  }catch(e){
+    document.getElementById("errorMsg").innerText =
+      "ESP32 शी कनेक्ट होऊ शकत नाही ❌";
+  }
+}
+
+/* 📡 FETCH DATA */
+async function fetchData(){
+ try{
+  let res = await fetch(`${ESP32_IP}/data`);
+  let data = await res.json();
+
+  phEl.innerText = data.ph;
+  turbidityEl.innerText = data.turbidity;
+  flowEl.innerText = data.flow;
+
+  statusEl.innerText = data.status;
+  statusEl.className = "value " + (data.status==="ALERT"?"alert":"normal");
+
+  // ALERT only on status change
+  if(data.status === "ALERT" && lastStatus !== "ALERT"){
+    addAlert("Water quality abnormal – valve closed");
+  }
+  lastStatus = data.status;
+
+  drawChart(data.flow);
+ }catch(e){
+  console.log("Disconnected");
+ }
+}
+
+/* 🚨 SHUT VALVE */
+function shutWater(){
+ fetch(`${ESP32_IP}/valve?state=off`);
+ addAlert("Water supply shut manually");
+}
+
+/* ⚠️ ALERT */
+function addAlert(msg){
+ let li=document.createElement("li");
+ li.innerText=new Date().toLocaleTimeString()+" - "+msg;
+ alertsEl.prepend(li);
+}
+
+/* 📈 CHART */
+function drawChart(val){
+ if(values.length > 10) values.shift();
+ values.push(Math.min(val, 50));
+
+ ctx.clearRect(0,0,300,150);
+ ctx.beginPath();
+ values.forEach((v,i)=>{
+   let x = i * 30;
+   let y = 150 - (v * 2);
+   ctx.lineTo(x, y);
+ });
+ ctx.stroke();
+}
+</script>
+
+</body>
+</html>
